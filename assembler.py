@@ -1,5 +1,5 @@
 ########################################
-# 10821039_朱珮瑜_One Pass SIC
+# 10821039_朱珮瑜_Two Pass SIC/XE
 # All loc count by decimal int, change form only at printing
 ########################################
 import string
