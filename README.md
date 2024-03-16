@@ -1,8 +1,8 @@
 # Machinify
 
-- [Introduction](##Introduction)
-- [Installation](##Installation)
-- [Usage](##Usage)
+- [Introduction](#Introduction)
+- [Installation](#Installation)
+- [Usage](#Usage)
 
 ## Introduction
 ### 發展
