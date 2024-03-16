@@ -1,0 +1,23 @@
+. comment
+  . indexed addressing
+.. free format coding
+. empty line detection
+. . comand line user filenames input
+
+PROG START 2000		. program start here
+BEGIN LDX #0
+LDA #0
++LDB #TABLE2
+BASE TABLE2
+LOOP ADD TABLE,X
+ADD TABLE2,X
+TIX COUNT
+JLT LOOP
++STA TOTAL
+RSUB
+COUNT WORD 100
+TABLE RESW 1500
+TABLE2 RESW 2000
+TOTAL RESW 1
+ONE WORD 1
+END BEGIN
