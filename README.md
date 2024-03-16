@@ -2,7 +2,7 @@
 
 - [Introduction](##Introduction)
 - [Installation](##Installation)
-- [Usage](##usage)
+- [Usage](##Usage)
 
 ## Introduction
 ### 發展
