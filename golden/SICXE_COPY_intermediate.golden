@@ -1,0 +1,46 @@
+7        -----    COPY     START    0                                  
+8        0000     FIRST    STL      RETADR           3        14       110000
+9        0003     -----    LDB      #LENGTH          3        68       010000
+10       -----    -----    BASE     LENGTH                             
+11       0006     CLOOP    +JSUB    RDREC            4        48       110001
+12       000A     -----    LDA      LENGTH           3        00       110000
+13       000D     -----    COMP     #0               3        28       010000
+14       0010     -----    JEQ      ENDFIL           3        30       110000
+15       0013     -----    +JSUB    WRREC            4        48       110001
+16       0017     -----    J        CLOOP            3        3C       110000
+17       001A     ENDFIL   LDA      EOF              3        00       110000
+18       001D     -----    STA      BUFFER           3        0C       110000
+19       0020     -----    LDA      #3               3        00       010000
+21       0023     -----    STA      LENGTH           3        0C       110000
+22       0026     -----    +JSUB    WRREC            4        48       110001
+23       002A     -----    J        @RETADR          3        3C       100000
+24       002D     EOF      BYTE     C'EOF'                             
+25       0030     RETADR   RESW     1                                  
+26       0033     LENGTH   RESW     1                                  
+27       0036     BUFFER   RESB     4096                               
+31       1036     RDREC    CLEAR    X                2        B4       
+32       1038     -----    CLEAR    A                2        B4       
+33       103A     -----    CLEAR    S                2        B4       
+34       103C     -----    +LDT     #4096            4        74       010001
+35       1040     RLOOP    TD       INPUT            3        E0       110000
+36       1043     -----    JEQ      RLOOP            3        30       110000
+37       1046     -----    RD       INPUT            3        D8       110000
+38       1049     -----    ADDR     A,S              2        90       
+39       104B     -----    JEQ      EXIT             3        30       110000
+40       104E     -----    STCH     BUFFER,X         3        54       111000
+41       1051     -----    TIXR     T                2        B8       
+42       1053     -----    JLT      RLOOP            3        38       110000
+43       1056     EXIT     STX      LENGTH           3        10       110000
+44       1059     -----    RSUB     -----            3        4C       110000
+45       105C     INPUT    BYTE     X'F1'                              
+51       105D     WRREC    CLEAR    X                2        B4       
+52       105F     -----    LDT      LENGTH           3        74       110000
+53       1062     WLOOP    TD       OUTPUT           3        E0       110000
+54       1065     -----    JEQ      WLOOP            3        30       110000
+55       1068     -----    LDCH     BUFFER,X         3        50       111000
+56       106B     -----    WD       OUTPUT           3        DC       110000
+57       106E     -----    TIXR     T                2        B8       
+58       1070     -----    JLT      WLOOP            3        38       110000
+59       1073     -----    RSUB     -----            3        4C       110000
+60       1076     OUTPUT   BYTE     X'CABD'                            
+61       1078     -----    END      WRREC                              

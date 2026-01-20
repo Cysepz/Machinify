@@ -1,0 +1,23 @@
+7        -----    PROG     START    1000                               
+8        1000     ZERO     WORD     0                                  
+9        1003     BEGIN    LDX      #0               3        04       010000
+10       1006     -----    LDS      #3               3        6C       010000
+11       1009     -----    LDT      #30              3        74       010000
+12       100C     -----    +LDB     #TABLE2          4        68       010001
+13       -----    -----    BASE     TABLE2                             
+14       1010     -----    LDA      #0               3        00       010000
+15       1013     LOOP     ADD      TABLE,X          3        18       111000
+16       1016     -----    ADD      TABLE2,X         3        18       111000
+17       1019     -----    ADDR     S,X              2        90       
+18       101B     -----    COMPR    X,T              2        A0       
+19       101D     -----    JLT      LOOP             3        38       110000
+20       1020     -----    +STA     TOTAL            4        0C       110001
+21       1024     -----    RSUB     -----            3        4C       110000
+22       1027     ONE      WORD     1                                  
+23       102A     TABLE    RESW     1500                               
+24       21BE     TWO      WORD     2                                  
+25       21C1     TABLE2   RESW     2000                               
+26       3931     THREE    WORD     3                                  
+27       3934     TOTAL    RESW     1                                  
+28       3937     FOUR     WORD     4                                  
+29       393A     -----    END      BEGIN                              

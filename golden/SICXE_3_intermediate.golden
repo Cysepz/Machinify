@@ -1,0 +1,17 @@
+7        -----    PROG     START    0000                               
+8        0000     BEGIN    LDX      #0               3        04       010000
+9        0003     -----    LDA      #0               3        00       010000
+10       0006     -----    +LDB     #TABLE2          4        68       010001
+11       -----    -----    BASE     TABLE2                             
+12       000A     LOOP     ADD      TABLE,X          3        18       111000
+13       000D     -----    ADD      TABLE2,X         3        18       111000
+14       0010     -----    TIX      COUNT            3        2C       110000
+15       0013     -----    JLT      LOOP             3        38       110000
+16       0016     -----    +STA     TOTAL            4        0C       110001
+17       001A     -----    RSUB     -----            3        4C       110000
+18       001D     COUNT    WORD     100                                
+19       0020     TABLE    RESW     1500                               
+20       11B4     TABLE2   RESW     2000                               
+21       2924     TOTAL    RESW     1                                  
+22       2927     ONE      WORD     1                                  
+23       292A     -----    END      BEGIN                              
