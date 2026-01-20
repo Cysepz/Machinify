@@ -1,612 +1,557 @@
-########################################
-# 10821039_朱珮瑜_Two Pass SIC/XE
-# All loc count by decimal int, change form only at printing
-########################################
+import os
+import sys
+import re
 import string
-import opTable
-import symbolTable
+# import symbol_table
+# import opcode_table
 
-originalFile = open('.\input\SICXE_COPY.txt', mode='r') # your input file here
-intermediateFile = open('intermediateFile.txt', mode='w+')
-pseudoCode = ['START', 'END', 'RESW', 'RESB', 'BYTE', 'WORD', 'BASE']
-errorList = []
+
+###########################
+# Files
+###########################
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+# command format: python assembler.py [input_file] [output_dir]
+input_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(base_dir, 'input', 'SICXE_COPY.txt')
+output_dir = sys.argv[2] if len(sys.argv) > 2 else base_dir
+
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+input_basename = os.path.splitext(os.path.basename(input_path))[0]
+log_file_path = os.path.join(output_dir, f"{input_basename}_log.txt")
+intermediate_file_path = os.path.join(output_dir, f"{input_basename}_intermediate.txt")
+object_file_path = os.path.join(output_dir, f"{input_basename}_object.txt")
+
+try:
+    source_file = open(input_path, mode='r', encoding='utf-8')
+    log_file = open(log_file_path, mode='w', encoding='utf-8')
+    intermediateFile = open(intermediate_file_path, mode='w+', encoding='utf-8')
+    object_file = open(object_file_path, mode='w+', encoding='utf-8') 
+except FileNotFoundError:
+    print(f"Error: 找不到輸入檔案 {input_path}")
+    sys.exit(1)
+
+source_file = open(input_path, mode='r', encoding='utf-8') # your input file path
+log_file = open(log_file_path, mode='w', encoding='utf-8') # your log file path
+intermediate_file = open(intermediate_file_path, mode='w+', encoding='utf-8')
+object_file = open(object_file_path, mode='w+', encoding='utf-8')
+
+class LogFile:
+    empty = True
+    @classmethod
+    def write(cls, stage, line_num, msg):
+        W_STAGE = 8
+        W_LINE = 12
+        if log_file.tell() == 0:
+            header = f"{'STAGE':<{W_STAGE}} {'LOCATION':<{W_LINE}} {'DESCRIPTION'}"
+            separator = "-" * 70
+            log_file.write(header + "\n")
+            log_file.write(separator + "\n")
+        
+        error_log = f"{f'Pass {stage}':<{W_STAGE}} {f'Line {line_num}':<{W_LINE}} {msg}"
+        log_file.write(error_log+"\n")
+        cls.empty = False
+
+    @classmethod
+    def is_empty(cls):
+        return cls.empty
+
+    def print_log():
+        log_file.seek(0)
+        for log in log_file:
+            print(f'{log}', ended='')
+
+# intermediate file format: LineNum, Loc, Label, Operation, Operand, Format, Opcode, BitFlag
+# Format may be null, 1, 2, 3, 4
+# Opcode can be null
+# BitFlag can be null
+class IntermediateFile:
+    def write(line_num, loc_ctr, label, operation, operand, format, opcode, bit_flag):
+        WIDTH = 8
+        # if intermediate_file.tell() == 0:
+        #     header = f"{'LINE':<{WIDTH}} {'LOC':<{WIDTH}} {'SOURCE PROGRAM':<{WIDTH*4+2}} {'FORMAT':<{WIDTH}} {'OPCODE':<{WIDTH}} {'BIT FLAG'}"
+        #     separator = "-" * 70
+        #     intermediate_file.write(header + "\n")
+        #     intermediate_file.write(separator + "\n")
+
+        if loc_ctr != '-----':
+            loc_ctr = f'{loc_ctr:04X}'
+        intermediate_line = f"{line_num:<{WIDTH}} {loc_ctr:<{WIDTH}} {label:<{WIDTH}} {operation:<{WIDTH}} {operand:<{WIDTH*2}} {format:<{WIDTH}} {opcode:<{WIDTH}} {bit_flag}"
+        intermediate_file.write(intermediate_line + "\n")
+    
+    def print_mid():
+        global line_num
+        intermediate_file.seek(0)
+        line_num = 1
+        for line in intermediate_file:
+            print(f'{line}', end='')
+            line_num += 1
+        print()
+
+
+class ObjectFile:
+    def h_record(prog_name, start_loc, prog_len):
+        WIDTH = 4
+        object_program = f"{prog_name} {int(start_loc):06} {prog_len:06X}"
+        object_file.write('H' + ' ' + object_program + '\n')
+    
+    def e_record(end_loc):
+        WIDTH = 4
+        object_program = f"{int(end_loc, 16):06X}"
+        object_file.write('E' + ' ' + object_program + '\n')
+    
+    def t_record(start_addr, len, content):
+        if(len == 0):
+            return
+        content = ' '.join(content)
+        object_program = f"{start_addr:06} {len:02X} {content}"
+        object_file.write('T' + ' ' + object_program + '\n')
+
+    def print_obj():
+        object_file.seek(0)
+        for program in object_file:
+            print(f'{program}', end='')
+
+
+###########################
+# Define OpTable class
+###########################
+class OpTable:
+    FORMAT_1 = ['FIX', 'FLOAT', 'HIO', 'SIO', 'TIO', 'NORM']
+    FORMAT_2 = ['CLEAR', 'COMPR', 'DIVR', 'MULR', 'RMO', 'SHIFTL', 'SHIFTR', 'SUBR', 'SVC', 'TIXR', 'ADDR']
+    OPTAB = {}
+
+    @classmethod
+    def build(cls):
+        file = open("D:\Project\Machinify\opCode.txt", mode='r')
+        cls.OPTAB = {}
+        for line in file:
+            if(len(line.split())) != 2: continue
+            mnemonic, opcode = line.split()
+            if mnemonic in cls.FORMAT_1:
+                format = 1
+            elif mnemonic in cls.FORMAT_2:
+                format = 2
+            else: format = 3
+            cls.OPTAB[mnemonic] = (opcode, format)
+    @classmethod
+    def search(cls, input):
+        if cls.OPTAB.get(input) :
+            return cls.OPTAB[input][0], cls.OPTAB[input][1] 
+        else:
+            return -1, -1
+    @classmethod
+    def isMnemonic(cls, input):
+        if input in cls.OPTAB:
+            return True
+        else:
+            return False
+
+class SymbolTable:
+    SYMTAB = {'A': '0', 'X': '1', 'L': '2', 'B': '3', 'S': '4', 'T': '5', 'F': '6', 'PC': '8', 'SW': '9'}
+    @classmethod
+    def build(cls, label, loc_ctr):
+        if label == '-----':
+            return ''
+        if(label in cls.SYMTAB):
+            return f'Duplicate Label at {label}'
+        else:
+            cls.SYMTAB[label] = hex(loc_ctr)
+        return ''
+    
+    @classmethod
+    def search(cls, input):
+            if cls.SYMTAB.get(input):
+                return cls.SYMTAB[input]
+            else:
+                return -1
+
+###########################
+# Assembler Starts here
+###########################
+# global var
+PSEUDO = ['START', 'END', 'RESW', 'RESB', 'BYTE', 'WORD', 'BASE']
 
 # Pass 1 variable
-start = False
-lineNum = 0
-progName = ''
-progLen = 0
-startLoc = 0
-curLoc = 0
-end = False
+started = False
+ended = False
+line_num = 0
+start_loc = 0
+prog_name = 'DEFAULT'
+prog_len = 0
+loc_ctr = 0
 
 # Pass 2 variable
-objectProgram = []
 base = 0
 pc = 0
 
 def main():
-    global lineNum
-    # build opTable
-    opTable.build()
-    # Pass 1
-    while end == False:
-        line = originalFile.readline().partition('.')[0].strip()
-        lineNum += 1
-        if len(line) == 0: 
-            continue
+    global line_num
+    OpTable.build()
+    # Pass 1: generate intermediate file
+    while not ended:
+        raw_line = source_file.readline()
+        if not raw_line: break
+        
+        line_num += 1
+        tokens = preprocess(raw_line)
+        if tokens is None: continue
         else:
-            if (start == False) & (not 'START' in line) :
-                errorList.append([1, lineNum, '程式開頭必須包含 START'])
-            else:
-                judgeToken(line)
+            classify_tokens(tokens)
+    IntermediateFile.print_mid()
 
-    # print immediate file
-    intermediateFile.seek(0)
-    lineNum = 1
-    for line in intermediateFile:
-        print(f'{lineNum} \t {line}', end='')
-        lineNum += 1
-    print()
-
-    # Pass 2
-    intermediateFile.seek(0)
-    # symbolTable.printSymbolTable()
-    objProgram(intermediateFile)
-
-    # print errorList
-    for e in errorList:
-        print('\033[91m' + f"(PASS {e[0]}) ERROR AT LINE {e[1]} : {e[2]}" + '\033[0m')
-
-    # print object program if no error
-    if len(errorList) == 0:
-        for e in objectProgram:
-            for f in e:
-                if f != '':
-                    print('\033[92m' + f'{f}' + '\033[0m', end=' ')
-                else: continue
-            print()
+    # Pass 2: assemble object program
+    intermediate_file.seek(0)
+    gen_object_program()
+    if LogFile.is_empty:
+        ObjectFile.print_obj()
+    else:
+        LogFile.print_log()
 
 ########################################
-
 # Pass 1
 # remove comment
 # generate intermediate file
 #   1. intermediate file format
-#       LineNum, loc, symbol, opcode/pseudo, operand, opcode, addrMode
+#       LineNum, Loc, Label, Operation, Operand, Format, Opcode, BitFlag
+#       Format may be null, 1, 2, 3, 4
+#       Opcode can be null
+#       BitFlag can be null
 #   2. don't write in intermediate file if error
-
 ########################################
-
-def judgeToken(line):
-    global start
-    global progName
-    global end
-    global curLoc
+def preprocess(raw_line):
+    """
+    1. Remove all comments in line
+    2. Normalize all comma format
+    3. Tokenization
+    """
+    line = raw_line.partition('.')[0].strip()
+    if not line:
+        return None
     
-    line = cutLine(line)
-    match len(line):
-        case 3: # with symbol
-            symbol = line[0]
-            opcode = line[1]
-            operand = line[2]
-            if opcode == 'RSUB':
-                errorList.append([1, lineNum, 'RSUB 不能有 operand'])
+    line = line.replace(' ,', ',').replace(', ', ',')
+    
+    tokens = line.split()
+    if(len(tokens) > 3):
+        LogFile.write(1, line_num, 'Syntax Error: Too much variable at this line.')
+        return None
+    else:
+        tokens = line.split(None, 2)
+    return tokens
+
+def classify_tokens(tokens):
+    global started, prog_name, ended, loc_ctr, start_loc
+    match len(tokens):
+        case 3:
+            label, operation, operand = tokens[0], tokens[1], tokens[2]
+        case 2:
+            label = '-----'
+            operation, operand = tokens[0], tokens[1]
+            pure_op = operation.lstrip('+')
+            found = OpTable.isMnemonic(pure_op)
+            if not (found or pure_op in PSEUDO):
+                label, operation = tokens[0], tokens[1]
                 operand = '-----'
-        case 2: # without symbol
-            symbol = '-----'
-            opcode = line[0]
-            operand = line[1]
-            # adjust error case (without operand)
-            tmpOpcode = opcode.lstrip('+')
-            [findOpcode, result] = opTable.findOpcode(opcode.lstrip('+'))
-            if (findOpcode == False) & (not tmpOpcode in pseudoCode):
-                tmpOpcode = operand
-                if (opTable.findOpcode(tmpOpcode)[0]) | (tmpOpcode in pseudoCode):  # when operand is actually opcode => lost operand
-                    symbol = line[0]
-                    opcode = line[1]
-                    if opcode == 'RSUB':
-                        operand = ''
-                    else:
-                        errorList.append([1, lineNum, '*Lost operand'])
-                        operand = '-----'
-            # error case: RSUB [operand]
-            elif (tmpOpcode == 'RSUB') & (operand != ''):
-                errorList.append([1, lineNum, 'RSUB 不能有 operand'])
-                operand = '-----'
-                    
         case 1:
-            symbol = '-----'
-            opcode = line[0]
-            operand = ''
-            if opcode != 'RSUB':
-                errorList.append([1, lineNum, '**Lost operand'])
-                operand = '-----'
-        case _:
-            errorList.append([1, lineNum, '此行無法正確切割'])
-            return 
-    
-    tmpOpcode = opcode.lstrip('+')
-    # pseudoCode
-    if tmpOpcode in pseudoCode:
-        match opcode:
-            case 'START':
-                caseSTART(curLoc, symbol, opcode, operand)
-            case 'END':
-                caseEND(curLoc, symbol, opcode, operand)
-                end = True
-                return
-            case 'BYTE':
-                caseBYTE(curLoc, symbol, opcode, operand)
-            case 'BASE':
-                retMsg = symbolTable.build(symbol, curLoc)
-                if retMsg != '':
-                    errorList.append([1, lineNum, retMsg])
-                    return
-                else:
-                    writeFile('-----', symbol, opcode, operand, '     ', '')
-            case _:
-                caseELSE(curLoc, symbol, opcode, operand)
+            label = '-----'
+            operation = tokens[0]
+            operand = '-----'
 
-    # mnemonic
+    # Error Case
+    pure_op = operation.lstrip('+')
+    if not (OpTable.isMnemonic(pure_op) or pure_op in PSEUDO):
+        LogFile.write(1, line_num, "Missing operation.")
     else:
-        retMsg = symbolTable.build(symbol, curLoc)
-        if retMsg != '':
-            errorList.append([1, lineNum, retMsg])                    
-        [findOpcode, errorMsg] = opTable.findOpcode(tmpOpcode)
-        if findOpcode == False:
-            errorList.append([1, lineNum, errorMsg])
-
-        else:
-            writeFile(curLoc, symbol, opcode, operand, opTable.answer, addressingMode(operand))
-            match opcode:
-                case var if '+' in var:
-                    curLoc += 4
-                case 'CLEAR' | 'COMPR' | 'ADDR' | 'TIXR' | 'SVC' | 'DIVR' | 'RMO' | 'MULR':# FIXME: 指令 format 2 要修訂
-                    curLoc += 2
-                    # register 會有 1或2個暫存器
-                    # FIXME: compr
-                case _:
-                    curLoc += 3
-                # FIXME: format 1
-                # sol: 
-
-def cutLine(line):
-    line = line.split()
-    for i in range(len(line)):
-        if line[i] == ',':
-            joinOperand = ''.join(line[i-1:])
-            del(line[i-1:])
-            line.append(joinOperand)
-            break
-        elif line[i].endswith(','):
-            joinOperand = ''.join(line[i:])
-            del(line[i:])
-            line.append(joinOperand)
-            break
-    return line
-
-def caseSTART(loc, symbol, opcode, operand):
-    global start
-    global startLoc
-    global lineNum
-    global progName
-    global curLoc
-
-    if start == False:
-        start = True
-    else:
-        errorList.append([1, lineNum, 'More than one START appear'])
-        return
-    if symbol == '-----':
-        errorList.append([1, lineNum, 'Without Program Name'])
-    if not operand.isdigit():
-        errorList.append([1, lineNum, 'Invalid start location'])
-    else:
-        writeFile('-----', symbol, opcode, operand, '     ', '')
-        progName = symbol    # get program name
-        curLoc = int(operand, 16) # convert hex to int
-        startLoc = curLoc   # initial startAddress
-
-def caseEND(loc, symbol, opcode, operand):
-    global progLen    
-    writeFile(curLoc, symbol, opcode, operand, '     ', '')
-    progLen = loc - startLoc # count and store program length    
-
-def caseBYTE(loc, symbol, opcode, operand):
-    global lineNum
-    global curLoc
-
-    splitOperand = operand.split("'")
-    type = splitOperand[0]
-    content = splitOperand[1]
-    
-    retMsg = symbolTable.build(symbol, curLoc)
-    if retMsg != '':
-        errorList.append([1, lineNum, retMsg])
-        return
-    else:
-        if (len(splitOperand) != 3):
-                errorList.append([1, lineNum, "BYTE 內容前後需有引號"])
-                return
-        if (splitOperand[2] != ''):
-                errorList.append([1, lineNum, "Illegal BYTE content"])
-                return
-        if content == '':
-                errorList.append([1, lineNum, "BYTE 內容不可為空"])
-                return
-        if (type == 'X'):
-            if operand[0] == 'X':
-                if len(content)%2 != 0:
-                    errorList.append([2, lineNum, 'BYTE type of X should have even number content.'])
-                elif all(c in string.hexdigits for c in content):
-                    writeFile(curLoc, symbol, opcode, operand, '     ', '')
-                else:
-                    errorList.append([1, lineNum, "Illegal BYTE content(type X should followed by hex)"])
-            curLoc += (len(content))//2
-        elif (type == 'C'):
-            writeFile(curLoc, symbol, opcode, operand, '     ', '')
-            curLoc += (len(content))
-        else:
-            errorList.append([1, lineNum, "Illegal BYTE type(BYTE should followed by recognizable char 'X' or 'C')"])
+        opcode, format = OpTable.search(pure_op)
+        if(pure_op == 'RSUB' or format == 1) and operand != '-----':
+            LogFile.write(1, line_num, f"Redundant operand({operand}) after {pure_op}.")
+            return # 或根據你的邏輯 return
+        if pure_op != 'RSUB' and format >= 2 and operand == '-----':
+            LogFile.write(1, line_num, f"Missing operand after {pure_op}.")
             return
 
-def caseELSE(loc, symbol, opcode, operand):
-    global curLoc
-    retMsg = symbolTable.build(symbol, curLoc)
-    if retMsg != '':
-        errorList.append([1, lineNum, retMsg])  
-        return
-    else:
-        if not operand.isdigit():
-            errorList.append([1, lineNum, f'{opcode} should followed by integer'])
+    if not started and pure_op != 'START':
+        LogFile.write(1, line_num, "Warning: Missing START directive; program address defaults to 0000.")
+        started = True
+        start_loc = 0
+        loc_ctr = start_loc
+
+    match pure_op:
+        case 'START':
+            if started:
+                LogFile.write(1, line_num, 'Multiple START directives. Ignore this one.')
+                return
+            else:
+                started = True
+                try: start_loc = int(operand, 16)
+                except ValueError:
+                    LogFile.write(1, line_num, "Invalid started location; default start location to 0.")
+                    start_loc = 0
+                prog_name = label if label != '-----' else 'DEFAULT'
+
+            loc_ctr = start_loc
+            ret_msg = SymbolTable.build(label, loc_ctr)
+            if ret_msg != "":
+                LogFile.write(1, line_num, retMsg)
+                return
+            else:
+                IntermediateFile.write(line_num, '-----', label, operation, operand, '', '', '')
+        case 'END':
+            global prog_len
+            prog_len = loc_ctr - start_loc
+            ended = True
+            IntermediateFile.write(line_num, loc_ctr, label, operation, operand, '', '', '')
             return
-        else:
-            writeFile(curLoc, symbol, opcode, operand, '     ', '')
-            match opcode:
+        case 'BASE':
+            retMsg = SymbolTable.build(label, loc_ctr)
+            if retMsg != '':
+                LogFile.write(1, line_num, retMsg)
+                return
+            else:
+                IntermediateFile.write(line_num, '-----', label, operation, operand, '', '', '')
+        case 'BYTE':
+            case_byte(label, operation, operand)
+        case 'WORD' | 'RESW' | 'RESB':
+            retMsg = SymbolTable.build(label, loc_ctr)
+            if retMsg != '':
+                LogFile.write(1, line_num, retMsg)
+                return
+            
+            try: operand = int(operand)
+            except ValueError:
+                LogFile.write(1, line_num, f'{operation} should followed by decimal integer')
+                return
+
+            IntermediateFile.write(line_num, loc_ctr, label, operation, operand, '', '', '')
+            match operation:
                 case 'RESW':
-                    curLoc = curLoc + 3 * int(operand)
+                    loc_ctr += 3 * operand
                 case 'RESB':
-                    curLoc = curLoc + int(operand)
+                    loc_ctr += operand
                 case 'WORD':
-                    curLoc += 3
+                    loc_ctr += 3
+        # Mnemonic Code
+        case _:
+            retMsg = SymbolTable.build(label, loc_ctr) if label != '-----' else ''
+            if retMsg != '':
+                LogFile.write(1, line_num, retMsg)
 
-def writeFile(loc, symbol, opCode, operand, opCodeAns, mode):
-    global lineNum
-    if loc == '-----':
-        wLoc = '-----'
-    else:
-        wLoc = str(str('%04x' % loc))
-        # wLoc = str(hex(loc)).strip('0x').rjust(4, '0')
-    intermediateFile.writelines([
-                    str(lineNum), '\t\t',
-                    wLoc, '\t\t',
-                    symbol, '\t\t',
-                    opCode, '\t\t',
-                    str(operand), '\t\t',
-                    opCodeAns, '\t\t',
-                    mode, '\n'])
+            if '+' in operation:
+                format = 4
+            flag_bits = flag_nixe(operation, operand) if format >= 3 else ''
+            IntermediateFile.write(line_num, loc_ctr, label, operation, operand, format, opcode, flag_bits)
+            loc_ctr += format    
+    
+def case_byte(label, operation, operand):
+    global line_num
+    global loc_ctr
+    match = re.match(r"^([CXBD])'([^']*)'$", operand)
+    if not match:
+        LogFile.write(1, line_num, "Error: Invalid BYTE operand format")
+        return
+    prefix = match.group(1)
+    content = match.group(2)
 
-def addressingMode(operand):
-    if operand == '-----':   # no operand, then no addrMode
-        mode = '-----'
-    elif operand == '':
-        mode = ''
-    else:   # judge addrMode
-        if(',' in operand): mode = 'index'
-        elif('#' in operand):   mode =  'immediate'
-        elif('@' in operand):   mode = 'indirect'
-        else:   mode = 'simple'
-    return mode
+    if content == '':
+        LogFile.write(1, line_num, "Error: Content of BYTE cannot be null")
+        return
+    retMsg = SymbolTable.build(label, loc_ctr)
+    if retMsg != '':
+        LogFile.write(1, line_num, retMsg)
+        return
+    elif (prefix == 'X'):
+        is_hex = all(c in string.hexdigits for c in content)
+        is_even = len(content) % 2 == 0
+        if not is_hex: 
+            LogFile.write(1, line_num, "Error: Illegal BYTE operand.")
+        elif not is_even:
+            LogFile.write(2, line_num, "Error: BYTE type of X should have even number content")
+        else:
+            IntermediateFile.write(line_num, loc_ctr, label, operation, operand, '', '', '')
+            loc_ctr += (len(content)) // 2
+    elif (prefix == 'C'):
+        IntermediateFile.write(line_num, loc_ctr, label, operation, operand, '', '', '')
+        loc_ctr += (len(content))
+
+def flag_nixe(operation, operand):
+    """
+    Return 6-bit flag (n i x b p e), set b,p as 0
+    """
+    if operand in ['-----', '']:
+        if operation == 'RSUB':
+            return '110000'
+        return '000000'
+
+    n, i, x, b, p, e = 0, 0, 0, 0, 0, 0
+
+    if '#' in operand:    # Immediate
+        n, i = 0, 1
+    elif '@' in operand:  # Indirect
+        n, i = 1, 0
+    else:                 # Simple (including Index)
+        n, i = 1, 1
+
+    if ',' in operand:
+        x = 1
+
+    if '+' in operation:
+        e = 1
+
+    flags = f"{n}{i}{x}{b}{p}{e}"
+    return flags
 
 ########################################
-
 # Pass 2
 # read intermediate file
 #   intermediate file format
-#       loc, symbol, opcode/pseudo, operand, opcode, addrMode
+#       loc_ctr, label, opcode/pseudo, operand, opcode, addrMode
 # generate object program
-
 ########################################
-
-def objProgram(intermediateFile):
-    global lineNum
-    global objectProgram
+def gen_object_program():
     global base
     global pc
-    f = intermediateFile.readlines()
-    TLen = 0
-    TList = []
-    resLine = 0
+    t_list = []
+    t_start = 0
+    t_len = 0
 
+    f = intermediate_file.readlines()
     for i in range(len(f)):
         line = f[i].split()
-        # print every line
-        # print(f'{i+1}:  {line}')
-        lineNum = line[0]
+        line_num = line[0]
         loc = line[1]
-        opcode = line[3]
+        label = line[2]
+        operation = line[3]
         operand = line[4]
 
-        # store pc loc
-        if i != len(f) -1 :
-            if f[i+1].split()[1] != '-----':
-                pc = f[i+1].split()[1]
-            else:
-                pc = f[i+2].split()[1]
-
-        match opcode:
+        object_code = ''
+        disp = 0
+        match operation:
             # H Record
             case 'START':
-                objCode = ''
-                objectProgram.append([])
-                objectProgram[resLine] = ['H', progName, operand.rjust(6, "0"), adjustF(6, hex(progLen), 16)]
-                resLine += 1
+                ObjectFile.h_record(prog_name, operand, prog_len)
+                continue
             # E Record
             case 'END':
-                objCode = ''
-                # make sure TList is all printed
-                tmpList = []
-                tmpList.append('T')
-                for i in range(len(TList)):
-                    if i == 0:
-                        tmpList.append(TList[i].rjust(6, "0"))
-                        tmpList.append(adjustF(2, hex(TLen), 16))
+                ObjectFile.t_record(t_start, t_len, t_list)
+                t_list.clear()
+                t_len = 0
+                end_addr = SymbolTable.search(operand)
+                if end_addr == -1:
+                    LogFile.write(2, line_num, f"Undefined symbol: {operand}")
+                else:
+                    ObjectFile.e_record(end_addr)
+                continue
+            # T Record
+            case 'RESW' | 'RESB':   # 將現在 t_lists 當中的東西全部印出來
+                ObjectFile.t_record(t_start, t_len, t_list)
+                t_list, t_len = [], 0
+            case 'BASE':
+                base = SymbolTable.search(operand)
+                if base == -1:
+                    LogFile.write(2, line_num, f"Undefined symbol: {operand}")
+            case 'WORD':
+                object_code = f"{int(operand):06X}"
+            case 'BYTE':
+                match = re.match(r"^([CXBD])'([^']*)'$", operand)
+                prefix, content = match.group(1), match.group(2)
+                if prefix == 'X':
+                    object_code = content.upper()
+                elif prefix == 'C':
+                    object_code = content.encode('ascii').hex().upper()
+            case _:
+                format = line[5] if len(line) >= 6 else None
+                opcode = line[6] if len(line) >= 7 else None
+                nixbpe = line[7] if len(line) >= 8 else 000000
+                if format == "1" or format == "2" or operation == 'RSUB': 
+                    object_code = gen_object_code(opcode, operand, format, nixbpe, 0)
+                else:
+                    if format == "4":
+                        pure_op = operand.lstrip('@#').split(',')[0].strip()
+                        if pure_op.isdigit():
+                            disp = int(pure_op)
+                        else:
+                            target = SymbolTable.search(pure_op)
+                            disp = int(target, 16) if target != -1 else 0
                     else:
-                        tmpList.append(TList[i])
-                objectProgram.append([])
-                objectProgram[resLine] = tmpList
-                resLine += 1
-                TList.clear()
-                TLen = 0
+                        # Format 3 處理
+                        pc_val = get_pc(i, f)
+                        b, p, disp = flag_bp(operand, base, pc_val)
+                        # 更新 nixbpe 字串中的 b, p 位元
+                        temp_nix = list(nixbpe)
+                        temp_nix[3], temp_nix[4] = str(b), str(p)
+                        nixbpe = "".join(temp_nix)
+                    object_code = gen_object_code(opcode, operand, format, nixbpe, disp)
 
-                objectProgram.append([])
-                res = symbolTable.search(operand)
-                if res == 'Label Not Found':
-                    errorList.append([2, lineNum, res])
-                else:
-                    objectProgram[resLine] = ['E', adjustF(6, symbolTable.search(line[4]), 16)]
-            # T Record(count objCode)
-            case _:
-                match opcode:
-                    case 'RESW' | 'RESB':   # print & clear TList
-                        objCode = ''
-                    case 'BASE':    # store base loc
-                        base = symbolTable.search(operand)
-                        objCode = ''
-                    case 'RSUB':
-                        if operand != '-----':                        
-                            objCode = adjustF(2, hex(int(operand, 16) + int('3', 16)), 16).ljust(6, '0')
-                    case 'WORD':
-                        objCode = adjustF(6, operand, 16)
-                    case 'BYTE':
-                        content = operand[2:-1]
-                        if operand[0] == 'X':
-                            objCode = operand.strip("X'")
-                        else:
-                            tmpObjCode = []
-                            for i in range(len(content)):
-                                tmpObjCode.append(hex(ord(content[i]))[2:])
-                            objCode = ''.join(tmpObjCode).rjust(6, '0')
-                    case _:
-                        objCode = countObjcode(line)
+        if object_code:
+            obj_byte_len = len(object_code) // 2
+            if t_len == 0:
+                t_start = f"{int(loc, 16):06X}"
+            elif (t_len + obj_byte_len) > 30:
+                ObjectFile.t_record(t_start, t_len, t_list)
+                t_list.clear()
+                t_len = 0
+                t_start = f"{int(loc, 16):06X}"
+            t_list.append(object_code)
+            t_len += obj_byte_len
 
-                # collect T Record
-                tmpTLen = TLen + len(objCode)//2
-                if (opcode == 'RESW') | (opcode == 'RESB'):
-                    if TLen == 0:
-                        continue
-                    tmpList = []
-                    tmpList.append('T')
-                    for i in range(len(TList)):
-                        if i == 0:
-                            tmpList.append(TList[i].rjust(6, "0"))
-                            tmpList.append(adjustF(2, hex(TLen), 16))
-                        else:
-                            tmpList.append(TList[i])
-                    objectProgram.append([])
-                    objectProgram[resLine] = tmpList
-                    resLine +=1
-                    TList.clear()
-                    TLen = 0
-                elif TLen == 0:
-                    TList.append(loc)
-                    TList.append(objCode)
-                    TLen = len(objCode) // 2
-                elif tmpTLen <= 30 :
-                    TList.append(objCode)
-                    TLen = tmpTLen
-                else:
-                    # when TList bomb, print it and clear it up
-                    tmpList = []
-                    tmpList.append('T')
-                    for i in range(len(TList)):
-                        if i == 0:
-                            tmpList.append(TList[i].rjust(6, "0"))
-                            tmpList.append(adjustF(2, hex(TLen), 16))
-                        else:
-                            tmpList.append(TList[i])
-                    objectProgram.append([])
-                    objectProgram[resLine] = tmpList
-                    resLine += 1
-                    TList.clear()
-                    TLen = 0
+def get_pc(current_index, file_lines):
+    for j in range(current_index + 1, len(file_lines)):
+        parts = file_lines[j].split()
+        if len(parts) >= 2: 
+            if parts[1] != '-----':
+                return int(parts[1], 16)
+    return 0
 
-                    # do things as TLen == 0
-                    TList.append(loc)
-                    TList.append(objCode)
-                    TLen = len(objCode) // 2
+def flag_bp(operand, base, pc):
+    # 嘗試 Base 相對定址前，先檢查 base 是否有效
+    if base == -1:
+        LogFile.write(2, line_num, "Error: Base relative addressing failed because BASE register is undefined")
+        return 0, 0, 0 # 無法定址
+    
+    clean_operand = operand.lstrip('@#').split(',')[0].strip()
+    if clean_operand.isdigit():
+        return 0, 0, int(clean_operand)
+    
+    target_addr = SymbolTable.search(clean_operand)    
+    if target_addr == '-1':
+        LogFile.write([2, line_num, f"Undefined Symbol: {operand}"])
+        return 0, 0, 0
+    # print("ta, base, pc", target_addr, base, pc)
 
+    target_addr = int(target_addr, 16) if isinstance(target_addr, str) else target_addr
+    curr_pc = int(pc, 16) if isinstance(pc, str) else pc
+    curr_base = int(base, 16) if isinstance(base, str) else base
 
-def adjustF(bit, input, f):
-    # bit: fill form to how many bit
-    # f: present input in what base (hex or decimal)
-    if f == 16: f = 'X' # upperSize
-    else:   f = 'd'
-    joinList = ['%', '0', str(bit), f]
-    tmpVar = ''.join(joinList)
+    disp = target_addr - curr_pc
+    if -2048 <= disp <= 2047:
+        return 0, 1, disp
 
-    if (type(input) == int):
-        result =  str(f'{tmpVar}' % input)
-    elif ('0x' in input) | (not input.isdigit()):    # convert string in hex form into decimal
-        result = str(f'{tmpVar}' % int(input, base=16))
-    elif (type(input) == str):
-        result =  str(f'{tmpVar}' % int(input))
-    else:
-        print('\033[91m' + "ERROR at adjustF: Cannot convert to right adjustFormat \n" + '\033[0m')
-    return result
+    disp = target_addr - curr_base
+    if 0 <= disp <= 4095:
+        return 1, 0, disp
 
-def countObjcode(line):
-    opcode = line[3]
-    operand = line[4]
-    opAns = line[5]
-    if operand == '-----':
-        return 'XXXXXX'
-    else:
-        match opcode:
-            # format 2 (2 register)
-            case 'ADDR' | 'COMPR':
-                objCode = [None] * 2
-                objCode[0] = opAns    # (1) (2) : opcode
-                objCode[1] = ''         # (3) (4) : register loc
-                tmpOperand = operand.split(',')
-                if len(tmpOperand) == 2:
-                    for i in operand.split(','):
-                        if i == '':
-                            errorList.append([2, lineNum, f'{opcode} should have 2 registers operand'])
-                        objCode[1] += symbolTable.search(i)
-                else:
-                    errorList.append([2, lineNum, f'{opcode} should have only 2 registers operand'])
-                    return 'XXXXXX'
-            case 'TIXR' | 'CLEAR' :
-                objCode = [None] * 2
-                objCode[0] = opAns    # (1) (2) : opcode
-                objCode[1] = ''         # (3) (4) : register loc
-                objCode[1] += symbolTable.search(operand).ljust(2, "0")
-            # format 4
-            case var if '+' in var:
-                objCode = [None] * 3
-                match line[6]:
-                    case 'indirect':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('2', 16)), 16)    # nixbpe = 100001
-                        objCode[1] = '1'
-                        tmpOperand = operand.strip('@')
-                        if tmpOperand.isdigit():
-                            objCode[2] = hex(int(tmpOperand))[2:].rjust(5, '0')
-                        else:
-                            objCode[2] = symbolTable.search(tmpOperand)[2:].rjust(5, "0")
-                    case 'immediate':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('1', 16)), 16)   # nixbpe = 010001
-                        objCode[1] = '1'
-                        tmpOperand = operand.strip('#')
-                        if tmpOperand.isdigit():
-                            objCode[2] = hex(int(tmpOperand))[2:].rjust(5, '0')
-                        else:
-                            objCode[2] = symbolTable.search(tmpOperand)[2:].rjust(5, "0")
-                    case 'index':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('3', 16)), 16)    # nixbpe = 111001
-                        # FIXME
-                        objCode[1] = '1'
-                        tmpOperand = operand.split(',')[0]
-                        if tmpOperand.isdigit():
-                            objCode[2] = tmpOperand.rjust(5, '0')
-                        else:
-                            objCode[2] = symbolTable.search(tmpOperand)[2:].rjust(5, "0")
-                    case _:
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('3', 16)), 16)    # nixbpe = 110001
-                        objCode[1] = '1'
-                        if line[3].isdigit():
-                            objCode[2] = operand.rjust(5, '0')
-                        else:
-                            objCode[2] = symbolTable.search(operand)[2:].rjust(5, "0")
-            case 'RSUB':
-                objCode = [None] * 2
-                objCode[0] = opAns
-                objCode[1] = '0000'
-            # format 3
-            case _:
-                objCode = [None] * 3
-                # (1) (2): n i
-                # (3): xbpe
-                # (4) (5) (6): operand
-                match line[6]:
-                    case 'indirect':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('2', 16)), 16)
-                        tmpOperand = operand.strip('@')
-                        if tmpOperand.isdigit():    # nixbpe = 100000
-                            objCode[1] = '0'
-                            objCode[2] = tmpOperand.rjust(3, '0')
-                        else:   # nixbpe = 10
-                            result = judgeBP(tmpOperand)
-                            objCode[1] = hex(int('0' + result[0] + '0', 2))[2:]
-                            objCode[2] = result[1][2:].rjust(3, '0')
-                    case 'immediate':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('1', 16)), 16)   # nixbpe = 010000
-                        objCode[1] = '0'
-                        tmpOperand = operand.strip('#')
-                        if tmpOperand.isdigit():
-                            objCode[2] = tmpOperand.rjust(3, '0')
-                        else:
-                            [bp, res] = judgeBP(tmpOperand)
-                            objCode[1] = hex(int('0' + bp + '0', 2))[2:]
-                            objCode[2] = res[2:].rjust(3, '0')
-                    case 'index':
-                        # nixbpe = 111 _ _ 0
-                        tmpOperand = operand.split(',')[0]
-                        [bp, res] = judgeBP(tmpOperand)
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('3', 16)), 16)
-                        objCode[1] = hex(int('1' + bp + '0', 2))[2:]
-                        objCode[2] = res[2:].rjust(3, '0')
-                    case 'simple':
-                        objCode[0] = adjustF(2, hex(int(opAns, 16) + int('3', 16)), 16)    # nixbpe = 110000
-                        if operand.isdigit():
-                            objCode[1] = operand.rjust(4, '0')
-                        else:
-                            [bp, res] = judgeBP(operand)
-                            if bp != 'XX':
-                                objCode[1] = hex(int('0' + bp + '0', 2))[2:]
-                                objCode[2] = res[2:].rjust(3, '0')
-                            else:
-                                return 'XXXXXX'
-        return ''.join(objCode)
+    LogFile.write(2, line_num, f"Out of range: {operand}")
+    return 0, 0, 0
 
-def judgeBP(operand):
-    # PC_relative = -2048 ~ 2047
-    # base_relative = 0 ~ 4096
-    # displacement = loc(operand) - (PC)
-    global base
-    global pc
-    res = symbolTable.search(operand)
-    if res != 'Label Not Found':
-        loc = res.lstrip('0x').rjust(4, '0')
-    else:
-        errorList.append([2, lineNum, res])
-        return 'XX', 'XXXX'
-    # try pc
-    ans = int(loc, 16) - int(pc, 16)
-    if (ans < 2047) & (ans > -2048):
-        if ans < 0:
-            ans  = int(bin2(ans), 2)
-        return '01', hex(ans)
-    else:   # try base
-        ans = int(loc, 16) - int(base, 16)
-        if (ans >= 0) & (ans <= 4096):
-            return '10', hex(ans)
-        else:
-            print('\033[91m' + '***** Error: BP judging out of range *****' + '\033[0m')
-            return 'XX' , 'XXXX'
-
-def bin2(x):
-    bits = 12      # 計算位元數
-    n = (1 << bits) - 1            # 相同位元數全為 1 的數
-    x2 = n & x                     # & 運算
-    if x < 0:
-        return f"{x2:#{bits+2}b}"  # 2 進位表示
-    else:
-        return f"{x2:#0{bits+2}b}" # 正數補上正負號位元
+def gen_object_code(opcode, operand, format, nixbpe, address_or_disp):
+    if format == "1":
+        return f"{opcode:02}"
+    elif format == "2":
+        regs = operand.split(',')
+        r1 = SymbolTable.search(regs[0])
+        r2 = SymbolTable.search(regs[1]) if len(regs) > 1 else '0'
+        return f"{opcode:02}{r1}{r2}"
+    # --- Format 3 & 4 process --- (includes RSUB)
+    bits = [int(bit) for bit in nixbpe]
+    first_byte = int(opcode, 16) + (bits[0] << 1) + bits[1]
+    xbpe_val = (bits[2] << 3) | (bits[3] << 2) | (bits[4] << 1) | bits[5]
+    if format == "3": return f"{first_byte:02X}{xbpe_val:1X}{address_or_disp & 0xFFF:03X}"
+    if format == "4": return f"{first_byte:02X}{xbpe_val:1X}{address_or_disp & 0xFFFFF:05X}"
+    return ''
 
 if __name__ == '__main__':
     main()
-    originalFile.close()
-    intermediateFile.close()
+    source_file.close()
+    intermediate_file.close()
     print()
