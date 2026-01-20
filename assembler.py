@@ -124,7 +124,8 @@ class OpTable:
 
     @classmethod
     def build(cls):
-        file = open("D:\Project\Machinify\opCode.txt", mode='r')
+        file_path = os.path.join(base_dir, 'opCode.txt')
+        file = open(file_path, mode='r')
         cls.OPTAB = {}
         for line in file:
             if(len(line.split())) != 2: continue
