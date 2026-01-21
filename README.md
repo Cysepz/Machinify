@@ -94,7 +94,6 @@ The test suite automatically compiles source files from ./input and compares the
 ## Development Roadmap (TODO)
 - [ ] Add support for **Literals** (LITTAB/LTORG).
 - [ ] Optimize **Modification Records** (M Record) to support Format 4 relocation.
-- [v] Provide a configuration file feature for dynamic loading of `opCode.txt` paths.
 
 ---
 
