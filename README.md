@@ -77,7 +77,9 @@ A detailed trace file containing the following fields:
 
 ### 3. Log File (*_log.txt)
 Detailed logs documenting the assembly process, warnings, and syntax errors detected during both passes.
+
 ---
+
 ## Testing & Quality Assurance
 
 This project utilizes **Regression Testing** against "Golden Files" (verified standard outputs). This ensures that new features or refactors do not break existing functionality.
