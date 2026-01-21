@@ -77,7 +77,7 @@ A detailed trace file containing the following fields:
 
 ### 3. Log File (*_log.txt)
 Detailed logs documenting the assembly process, warnings, and syntax errors detected during both passes.
-
+---
 ## Testing & Quality Assurance
 
 This project utilizes **Regression Testing** against "Golden Files" (verified standard outputs). This ensures that new features or refactors do not break existing functionality.
@@ -88,10 +88,15 @@ pip install pytest
 pytest -v
 ```
 The test suite automatically compiles source files from ./input and compares the results against the standards in ./golden, reporting any line-by-line mismatches.
+
+---
+
 ## Development Roadmap (TODO)
 - [ ] Add support for **Literals** (LITTAB/LTORG).
 - [ ] Optimize **Modification Records** (M Record) to support Format 4 relocation.
-- [ ] Provide a configuration file feature for dynamic loading of `opCode.txt` paths.
+- [v] Provide a configuration file feature for dynamic loading of `opCode.txt` paths.
+
+---
 
 ## 📄 License
 
